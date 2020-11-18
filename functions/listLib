@@ -1,0 +1,113 @@
+#!/bin/bash
+
+
+function list_mkinit() {
+    if [ "$1"= "force" ]; then
+        local force=1
+    else
+    	local force=0
+    fi
+
+    if [ [! -s "$DB"] || [ $force="1" ] ]; then
+    	echo '{"Lists":{}}' > "$DB"
+    	echo "Initial file recreated."
+    else
+    	echo "DB file already exists."
+    fi	
+}
+
+function list_create() {
+    local name=$1
+    local response=$(cat "$DB" | jq -r --arg name "$name" '.Lists += {($name):{"read_mode":"0","list":{}}}')
+    if [ ! -z "$response" ]; then
+        echo "$response" > "$DB"
+    else
+    	echo "Error, something went wrong in 'list_create() function'"
+    fi
+}	
+
+function list_append() {
+    local name=$1
+    local -n list=$2 #array should be passed by name of array
+    for element in "${list[@]}" #check if elements with the same names already exists
+    do
+    	if [ $(cat "$DB" | jq -r --arg element "$element" --arg name "$name" '.Lists[$name].list | has($element)')="false" ]; then
+            local response=$(cat "$DB" | jq -r --arg element "$element" --arg name "$name" '.Lists[$name].list += {($element):"0"}')
+            if [ ! -z "$response" ]; then
+                 echo "$response" > "$DB"
+            else
+            	 echo "Error, something went wrong in 'list_append() function'"
+            fi	
+    	fi
+    done	
+}
+
+function list_get_names() {
+    #Specify range of names / name position or nothing if you wanna display all names
+    cat "$DB" | jq  '.Lists | keys_unsorted['$1']'
+}
+
+function list_get_elements() {
+    local name=$1
+    #list of needed elements should be passed by name of array
+    local -n list=$2
+    local elements=""
+    for element in "${list[@]}"
+    do
+        elements+=$(cat "$DB" | jq --arg name "$name" '.Lists[$name].list | to_entries | .['$element']'),
+    done
+    echo "[${elements::-1}]"
+}
+
+function list_toggle_elements() {
+    local name=$1
+    local -n list_toggle=$2
+    for toggle in "${list_toggle[@]}"
+    do
+        echo $toggle
+        if [ $(jq -r --arg toggle "$toggle" --arg name "$name" '.Lists[$name].list| to_entries[$toggle].value') = "0" ]; then
+            jq -r --arg toggle "$toggle" --arg name "$name" '.Lists[$name].list[$toggle] = "1"'
+        else
+            jq -r --arg toggle "$toggle" --arg name "$name" '.Lists[$name].list[$toggle] = "0"'
+        fi
+    done
+}
+
+function list_element_count() {
+    local name=$1
+    echo "$DB" | jq --arg name "$name" '.Lists[$name].list | length'
+}
+
+#Syntax:
+#
+#	ALL ARRAYS SHOULD BE PASSED BY THEIR NAMES, NOT AS VARIABLE
+#	$DB variable should contain path to DB file
+#
+#   list_mkinit
+#   <"force">
+# -- generates initial DB skeleton
+#   
+#    list_create
+#    <"$list_name">
+# -- creates new list with given name
+#
+#    list_append
+#    <"$list_name"> <ARRAY>
+# -- appends list with array elements
+#
+#    list_toggle_elements
+#    <"$list_name"> <ARRAY>
+# -- toggles state of elements in array
+#
+#    list_get_names <range/position/nothing>
+# -- returns all currently exisiting lists 
+#
+#    list_get_elements
+#    <"$list_name"> <ARRAY>
+# -- returns requested elements in json format: [{"key": "key1", "value": "value1"}, {"key": "key2", "value":"value2"}, ... }]
+#
+#    list_element_count
+#    <"$list_name">
+# -- returns number of elements in the list
+#
+#TODO: implement list_destroy and list_del_elements

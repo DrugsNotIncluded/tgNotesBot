@@ -1,0 +1,68 @@
+#!/bin/bash
+
+base_url='https://api.telegram.org/bot'$TOKEN''
+header='Content-Type: application/json'
+
+function _request() {
+    local data=$1 method=$2
+    curl -X POST -H "$header" -d "$data" ''$base_url'/'$method'' | jq ".result"
+}
+
+function update_last_action() {
+    #LAST_ID should be extracted from tg_data
+    local check_id="$1"        # should be passed as first argument
+    local last_message_id=$(cat $TG_DATA | jq ".LAST_ID" )
+    if [ "$check_id">"$last_message_id" ]; then
+    	last_message_id=$check_id
+    	UPD_ID=$(cat $TG_DATA | jq --arg check_id "$check_id" ".LAST_ID=check_id")
+        echo "$UPD_ID" > "$TG_DATA"
+}
+        
+
+function send_message() {
+    local chat_id=$1 message=$2 message_id=$3
+    local method="sendMessage"
+    local data='{"chat_id":"'$chat_id'",
+		 "text":"'$message'",
+    "reply_to_message":"'$message_id'"}'
+    
+    _request "$data" "$method"
+}
+
+function send_poll() {
+    local chat_id=$1 poll_title=$2 message_id=$3 method="sendPoll" delim="" joined=""
+    local -n options=$4
+    for item in "${options[@]}"; do
+        joined=$(echo -e "$joined$delim\x22$item\x22");
+        delim=","
+    done
+    options=$joined
+    local data='{"chat_id":"'$chat_id'",
+    		 "question":"'$poll_title'",
+    		 "options":['$options']
+    		 "parse_mode":"MarkdownV2",
+    		 "allows_multiple_answers":"True"}'
+    		 
+    _request "$data" "$method"
+}
+
+function send_media() {
+    #Audio, Video, Image, Voice
+    local chat_id=$1 path=$2 method="send$3"
+    curl -X POST "$base_url/$method" 			     \
+    				     -F 'chat_id='$chat_id'' \
+    				     -F 'photo=@'$path''     \
+    				     | jq ".result"   
+}
+
+function get_updates() {
+    local -n update_array=$1 #Pass array by name
+    local -a temp=()
+    local method="getUpdates"
+    local updates="$(curl -s -X POST "$base_url/$method")"
+    local update_count=$(echo "$updates" | jq -r ".result | length")
+
+    for ((i=0; i<$update_count; i++)); do
+        update_array+=("$(echo $updates | jq -r '.result['$i']')")
+    done
+}
